@@ -172,7 +172,7 @@ mod visit;
 
 // Data types
 
-#[derive(Debug, StableHash)]
+#[derive(Clone, Debug, StableHash)]
 pub struct ResolverGlobalCtxt {
     pub visibilities_for_hashing: Vec<(LocalDefId, Visibility)>,
     /// Item with a given `LocalDefId` was defined during macro expansion with ID `ExpnId`.
@@ -263,7 +263,7 @@ pub struct ResolverAstLowering<'tcx> {
     pub disambiguators: LocalDefIdMap<Steal<PerParentDisambiguatorState>>,
 }
 
-#[derive(Debug, StableHash)]
+#[derive(Clone, Debug, StableHash)]
 pub struct DelegationInfo {
     // `DefId` (either the resolution at delegation.id or item_id in case of a trait impl) for signature resolution,
     // for details see https://github.com/rust-lang/rust/issues/118212#issuecomment-2160686914

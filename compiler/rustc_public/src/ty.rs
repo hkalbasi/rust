@@ -194,6 +194,11 @@ impl MirConst {
         with(|cx| cx.try_new_const_zst(ty))
     }
 
+    /// Build a new constant that represents the given unsigned integer.
+    pub fn try_from_float(value: f64, float_ty: FloatTy) -> Result<MirConst, Error> {
+        with(|cx| cx.try_new_const_float(value, float_ty))
+    }
+
     /// Build a new constant that represents the given string.
     ///
     /// Note that there is no guarantee today about duplication of the same constant.

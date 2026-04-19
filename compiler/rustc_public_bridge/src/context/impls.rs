@@ -516,6 +516,22 @@ impl<'tcx, B: Bridge> CompilerCtxt<'tcx, B> {
         Ok(self.mir_const_from_scalar(Scalar::Int(scalar), ty_internal))
     }
 
+    pub fn try_new_const_float(
+        &self,
+        value: f64,
+        ty_internal: Ty<'tcx>,
+    ) -> Result<MirConst<'tcx>, B::Error> {
+        let size = self
+            .tcx
+            .layout_of(self.fully_monomorphized().as_query_input(ty_internal))
+            .unwrap()
+            .size;
+        let scalar = ScalarInt::try_from_uint(value.to_bits(), size).ok_or_else(|| {
+            B::Error::new(format!("Value overflow: cannot convert `{value}` to `{ty_internal}`."))
+        })?;
+        Ok(self.mir_const_from_scalar(Scalar::Int(scalar), ty_internal))
+    }
+
     pub fn try_new_ty_const_uint(
         &self,
         value: u128,
