@@ -1,4 +1,5 @@
 // tidy-alphabetical-start
+#![allow(unexpected_cfgs)]
 #![doc(
     html_root_url = "https://doc.rust-lang.org/nightly/",
     html_playground_url = "https://play.rust-lang.org/"
@@ -122,7 +123,30 @@ mod visit;
 mod visit_ast;
 mod visit_lib;
 
+pub trait Callbacks: Send {
+    fn config(&mut self, _config: &mut interface::Config) {}
+
+    fn after_crate_root_parsing(
+        &mut self,
+        _compiler: &interface::Compiler,
+        _krate: &mut rustc_ast::Crate,
+    ) {
+    }
+
+    fn after_expansion(&mut self, _tcx: TyCtxt<'_>) {}
+}
+
+struct NoCallbacks;
+
+impl Callbacks for NoCallbacks {}
+
 pub fn main() -> ExitCode {
+    let mut callbacks = NoCallbacks;
+    let at_args = std::env::args().collect::<Vec<_>>();
+    run_with_callbacks(&at_args, &mut callbacks)
+}
+
+pub fn run_with_callbacks(at_args: &[String], callbacks: &mut dyn Callbacks) -> ExitCode {
     let mut early_dcx = EarlyDiagCtxt::new(ErrorOutputType::default());
 
     rustc_driver::install_ice_hook(
@@ -159,10 +183,8 @@ pub fn main() -> ExitCode {
         Err(rustc_log::Error::AlreadyInit(_)) => {}
         Err(error) => early_dcx.early_fatal(error.to_string()),
     }
-
     rustc_driver::catch_with_exit_code(|| {
-        let at_args = rustc_driver::args::raw_args(&early_dcx);
-        main_args(&mut early_dcx, &at_args);
+        main_args(&mut early_dcx, at_args, callbacks);
     })
 }
 
@@ -196,7 +218,7 @@ fn init_logging(early_dcx: &EarlyDiagCtxt) {
     tracing::subscriber::set_global_default(subscriber).unwrap();
 }
 
-fn opts() -> Vec<RustcOptGroup> {
+pub fn opts() -> Vec<RustcOptGroup> {
     use rustc_session::config::OptionKind::{Flag, FlagMulti, Multi, Opt};
     use rustc_session::config::OptionStability::{Stable, Unstable};
     use rustc_session::config::make_opt as opt;
@@ -813,7 +835,7 @@ fn run_merge_finalize(
     Ok(())
 }
 
-fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String]) {
+fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String], callbacks: &mut dyn Callbacks) {
     // Throw away the first argument, the name of the binary.
     // In case of at_args being empty, as might be the case by
     // passing empty argument array to execve under some platforms,
@@ -885,7 +907,7 @@ fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String]) {
 
         return match md_input {
             Some(_) => wrap_return(dcx, doctest::test_markdown(&input, options, dcx)),
-            None => doctest::run(dcx, input, options),
+            None => doctest::run(dcx, input, options, callbacks),
         };
     }
 
@@ -897,7 +919,8 @@ fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String]) {
         return {
             let md_input = md_input.to_owned();
             let edition = options.edition;
-            let config = core::create_config(input, options, &render_options);
+            let mut config = core::create_config(input, options, &render_options);
+            callbacks.config(&mut config);
             let registered_lints = config.register_lints.is_some();
 
             // `markdown::render` can invoke `doctest::make_test`, which
@@ -974,7 +997,9 @@ fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String]) {
     let bin_crate = options.bin_crate;
 
     let output_format = options.output_format;
-    let config = core::create_config(input, options, &render_options);
+    let mut config = core::create_config(input, options, &render_options);
+    callbacks.config(&mut config);
+
     let registered_lints = config.register_lints.is_some();
 
     interface::run_compiler(config, |compiler| {
@@ -999,8 +1024,10 @@ fn main_args(early_dcx: &mut EarlyDiagCtxt, at_args: &[String]) {
             return;
         }
 
-        let krate = rustc_interface::passes::parse(sess);
+        let mut krate = rustc_interface::passes::parse(sess);
+        callbacks.after_crate_root_parsing(compiler, &mut krate);
         rustc_interface::create_and_enter_global_ctxt(compiler, krate, |tcx| {
+            callbacks.after_expansion(tcx);
             if sess.dcx().has_errors().is_some() {
                 sess.dcx().fatal("Compilation failed, aborting rustdoc");
             }
